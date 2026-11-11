@@ -310,7 +310,13 @@ function gatewayNativeModel(config: AiModelConfig, gatewayUrl: string): Model<Ap
         ...window,
         thinkingLevelMap: catalog?.thinkingLevelMap,
       };
-    case "cloudflare":
+    case "cloudflare": {
+      // Model IDs with the gateway's `custom/` prefix are AI Gateway model aliases (a model
+      // pool with fallback order or smart routing, configured on the gateway). The gateway
+      // serves aliases only through its unified /compat chat endpoint -- an alias has no
+      // provider-native route. The alias, not the request, picks the model per turn, so the
+      // descriptor carries no catalog flags or reasoning levels for any one model.
+      let alias = config.model.startsWith("custom/");
       // Workers AI's own OpenAI-compatible endpoint, exposed through the gateway's workers-ai
       // route. This is Workers AI's native chat API (the same surface as its direct
       // /accounts/{id}/ai/v1 REST endpoint), not the gateway's cross-provider /compat layer.
@@ -319,17 +325,19 @@ function gatewayNativeModel(config: AiModelConfig, gatewayUrl: string): Model<Ap
         name: catalog?.name ?? config.model,
         api: "openai-completions",
         provider: "cloudflare-workers-ai",
-        baseUrl: `${gatewayUrl}/workers-ai/v1`,
-        reasoning: catalog?.reasoning ?? false,
+        baseUrl: `${gatewayUrl}${alias ? "/compat" : "/workers-ai/v1"}`,
+        reasoning: alias ? false : catalog?.reasoning ?? false,
         input: catalog?.input ?? ["text"],
         cost: catalog?.cost ?? ZERO_COST,
         ...window,
         // With the catalog's level map, pi sends an effort on every request, the one the map
         // gives "off" included. So the descriptor has the map only when a level is set, and
         // requests are otherwise sent no effort at all.
-        ...(config.reasoning !== undefined ? { thinkingLevelMap: catalog?.thinkingLevelMap } : {}),
+        ...(config.reasoning !== undefined && !alias
+            ? { thinkingLevelMap: catalog?.thinkingLevelMap } : {}),
         compat: workersAiCompat(catalog),
       };
+    }
     default:
       return undefined;
   }

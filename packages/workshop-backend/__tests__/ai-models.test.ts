@@ -252,6 +252,28 @@ describe("getModel AI Gateway routing", () => {
     expect(request.headers.get("x-session-affinity")).toBe("session-a");
   }, 15000);
 
+  it("routes gateway model aliases (custom/ IDs) through the gateway's /compat endpoint", async () => {
+    const handle = getModel(env(), { ...WORKERS_AI_CONFIG, model: "custom/support-fast" },
+        INITIATOR, { sessionAffinity: "session-a" });
+
+    // Aliases have no provider-native route: the gateway serves them only from its unified
+    // OpenAI-compat chat endpoint, and the alias -- not the request -- picks the model.
+    expect(handle.model.api).toBe("openai-completions");
+    expect(handle.model.id).toBe("custom/support-fast");
+    expect(handle.model.baseUrl).toBe(
+        "https://gateway.ai.cloudflare.com/v1/gateway-account-id/platform-gateway/compat");
+    expect(handle.model.reasoning).toBe(false);
+
+    const request = await captureRequest(handle);
+    expect(request.url).toBe(
+        "https://gateway.ai.cloudflare.com/v1/gateway-account-id/platform-gateway/compat/" +
+        "chat/completions");
+    expect(request.headers.get("cf-aig-authorization")).toBe("Bearer gateway-token");
+    expect((JSON.parse(request.body) as { model: string }).model).toBe("custom/support-fast");
+    // No reasoning effort: the alias's pool picks the model, so the descriptor reasons nothing.
+    expect(JSON.parse(request.body)).not.toHaveProperty("reasoning");
+  }, 15000);
+
   // The environment's providers are not all a deployment enables, so the refusal lists none.
   it("refuses a provider the gateway has no route for", () => {
     expect(() => getModel(env({ CF_AI_GATEWAY_PROVIDERS: "anthropic,ollama" }),
@@ -369,6 +391,21 @@ describe("getModel AI Gateway binding transport", () => {
     const headerNames = Object.keys(entry.headers).map((name) => name.toLowerCase());
     expect(headerNames).not.toContain("authorization");
     expect(headerNames).not.toContain("x-api-key");
+  }, 15000);
+
+  it("drives gateway model aliases (custom/ IDs) through the binding's /compat route", async () => {
+    const handle = getModel(bindingEnv(), { ...WORKERS_AI_CONFIG, model: "custom/support-fast" },
+        INITIATOR);
+
+    expect(handle.model.baseUrl).toBe(
+        "https://workers-binding.ai/ai-gateway/gateways/platform-gateway/compat");
+    expect(handle.aiGatewayLogRoute).toEqual({ gateway: "platform-gateway" });
+
+    const entry = await captureEntry(handle);
+    expect(entry.url).toBe(
+        "https://workers-binding.ai/ai-gateway/gateways/platform-gateway/compat/" +
+        "chat/completions");
+    expect((JSON.parse(entry.body) as { model: string }).model).toBe("custom/support-fast");
   }, 15000);
 
   it("lets a per-call fetch override the binding transport", async () => {
