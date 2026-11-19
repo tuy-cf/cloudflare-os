@@ -640,6 +640,16 @@ export default function GatekeeperModal({
   const handleConnectAccount = async (vendorId: string, resourceUrlPatterns?: string[]) => {
     setConnectingVendor(vendorId)
     try {
+      // Ambient (auto-provisioning) gatekeepers mint the account server-side with no OAuth
+      // pop-up: the API contract routes them to provisionAmbientAccount (see
+      // listAddableGatekeepers). The generic connectAccount flow has no redirect URL to open
+      // for such a vendor and throws, which left ambient vendors with URL-addressed resources
+      // unconnectable from this modal.
+      if (vendors.find(vendor => vendor.id === vendorId)?.description.autoProvisionsAccount) {
+        await authenticatedApi.provisionAmbientAccount(vendorId)
+        toasts.add({ title: 'Account connected.', variant: 'success' })
+        return
+      }
       const outcome = await openConnectWindow(await authenticatedApi.connectAccount(vendorId, resourceUrlPatterns), authenticatedApi)
       toasts.add({ title: outcome === 'connected' ? 'Account connected.' : 'Complete the account connection in the pop-up window.', variant: 'success' })
     } catch (error) {

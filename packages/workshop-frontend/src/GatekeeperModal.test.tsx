@@ -8,7 +8,7 @@ import type { RpcStub } from 'capnweb'
 import type {
   AiChatAuthorInfo, AuthenticatedApi, ConnectedAccountsSubscriber, ConnectFlowStart, ModelKind,
 } from '@gadgets/workshop-shared/api'
-import type { SupportedResource } from '@gadgets/workshop-shared/gatekeeper'
+import type { SupportedResource, VendorDescription } from '@gadgets/workshop-shared/gatekeeper'
 import { AuthPopupCancelledError } from './features/native-app/authPopup'
 
 const testState = vi.hoisted(() => ({
@@ -128,13 +128,16 @@ const api = vi.hoisted(() => ({
   subscriber: null as ConnectedAccountsSubscriber | null,
   startResourceConfigurator: vi.fn<(accountId: number, resourceUrlPattern: string) => Promise<object>>(),
   ensureAccountResources: vi.fn<(accountId: number, patterns: string[]) => Promise<ConnectFlowStart | null>>(),
+  provisionAmbientAccount: vi.fn<(vendorId: string) => Promise<void>>(),
+  connectAccount: vi.fn<(vendorId: string, patterns?: string[]) => Promise<ConnectFlowStart>>(),
 }))
 
-function authenticatedApi({ resource = RESOURCE, otherResources = [], accountIds = [1], granted }: {
+function authenticatedApi({ resource = RESOURCE, otherResources = [], accountIds = [1], granted, vendorDescription = VENDOR }: {
   resource?: SupportedResource
   otherResources?: SupportedResource[]
   accountIds?: number[]
   granted?: string[]
+  vendorDescription?: VendorDescription
 } = {}): RpcStub<AuthenticatedApi> {
   const resources = [resource, ...otherResources]
   api.startResourceConfigurator.mockImplementation(async () => ({
@@ -145,7 +148,7 @@ function authenticatedApi({ resource = RESOURCE, otherResources = [], accountIds
     listModels: async (kind?: ModelKind) => kind === 'decision' ? [DECISION_MODEL] : [CHAT_MODEL],
     listGatekeeperVendors: async () => [{
       id: 'catalog',
-      description: VENDOR,
+      description: vendorDescription,
       supportedResources: resources,
     }],
     subscribeConnectedAccounts: (subscriber: ConnectedAccountsSubscriber) => {
@@ -158,6 +161,8 @@ function authenticatedApi({ resource = RESOURCE, otherResources = [], accountIds
     },
     startResourceConfigurator: api.startResourceConfigurator,
     ensureAccountResources: api.ensureAccountResources,
+    provisionAmbientAccount: api.provisionAmbientAccount,
+    connectAccount: api.connectAccount,
   } as unknown as RpcStub<AuthenticatedApi>
 }
 
@@ -177,6 +182,8 @@ afterEach(() => {
   api.subscriber = null
   api.startResourceConfigurator.mockReset()
   api.ensureAccountResources.mockReset()
+  api.provisionAmbientAccount.mockReset()
+  api.connectAccount.mockReset()
   openConnectWindow.mockReset()
   testState.configurator = null
   vi.unstubAllGlobals()
@@ -577,5 +584,43 @@ describe('GatekeeperModal resource grant step', () => {
     } finally {
       consoleError.mockRestore()
     }
+  })
+})
+
+describe('GatekeeperModal ambient vendors', () => {
+  const buttons = () => Array.from(document.body.querySelectorAll<HTMLButtonElement>('button'))
+  const button = (label: string) => buttons().find(candidate => candidate.textContent === label)!
+
+  // An auto-provisioning vendor has no OAuth redirect to open: the modal must mint its account
+  // via provisionAmbientAccount, per the API contract, instead of calling connectAccount (which
+  // throws for ambient vendors).
+  it('provisions an auto-provisioning vendor in place instead of opening the OAuth pop-up', async () => {
+    stubResizeObserver()
+    await renderModal({ initialVendorId: 'catalog', initialResourceUrlPattern: RESOURCE.urlPattern }, {
+      accountIds: [],
+      vendorDescription: { ...VENDOR, autoProvisionsAccount: true },
+    })
+
+    await vi.waitFor(() => expect(buttons().map(b => b.textContent)).toContain('Connect Service catalog'))
+    await act(async () => button('Connect Service catalog').click())
+
+    expect(api.provisionAmbientAccount.mock.calls).toEqual([['catalog']])
+    expect(api.connectAccount).not.toHaveBeenCalled()
+    expect(openConnectWindow).not.toHaveBeenCalled()
+    expect(testState.toasts).toEqual([{ title: 'Account connected.', variant: 'success' }])
+  })
+
+  it('keeps the OAuth pop-up flow for ordinary vendors', async () => {
+    stubResizeObserver()
+    api.connectAccount.mockResolvedValue({ url: 'https://catalog.example.com/oauth', nonce: 'nonce' })
+    await renderModal({ initialVendorId: 'catalog', initialResourceUrlPattern: RESOURCE.urlPattern }, {
+      accountIds: [],
+    })
+
+    await vi.waitFor(() => expect(buttons().map(b => b.textContent)).toContain('Connect Service catalog'))
+    await act(async () => button('Connect Service catalog').click())
+
+    expect(api.connectAccount.mock.calls).toEqual([['catalog', undefined]])
+    expect(api.provisionAmbientAccount).not.toHaveBeenCalled()
   })
 })
