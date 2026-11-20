@@ -926,11 +926,11 @@ describe("AdminSettings gateway providers", () => {
 });
 
 // The first of Workers AI's suggested models, which is the one a test of that provider asks.
-const KIMI = "@cf/moonshotai/kimi-k2.7-code";
+const GLM = "@cf/zai-org/glm-5.3";
 
 // One event of a Workers AI chat completion, as the gateway streams it.
 const chunk = (choice: object, rest: object = {}) => `data: ${JSON.stringify({
-  id: "completion", object: "chat.completion.chunk", created: 0, model: KIMI,
+  id: "completion", object: "chat.completion.chunk", created: 0, model: GLM,
   choices: [{ index: 0, ...choice }], ...rest,
 })}\n\n`;
 function completion(text: string): Response {
@@ -1029,8 +1029,8 @@ describe("AdminSettings.testGatewayProvider", () => {
     const before = await inDo(admin => admin.getAdminConfig());
     const { result, entries } = await test("cloudflare");
 
-    expect(KIMI).toBe(Object.keys(SUGGESTED_MODELS.cloudflare)[0]);
-    expect(result).toStrictEqual({ model: KIMI, ok: true });
+    expect(GLM).toBe(Object.keys(SUGGESTED_MODELS.cloudflare)[0]);
+    expect(result).toStrictEqual({ model: GLM, ok: true });
     expect(requests).toHaveLength(1);
     const [{ url, headers, body }] = requests;
     expect(url).toBe("https://workers-binding.ai/ai-gateway/gateways/platform-gateway/" +
@@ -1039,12 +1039,12 @@ describe("AdminSettings.testGatewayProvider", () => {
         .toStrictEqual({ user: "admin@example.com" });
     // Every test sends the same request, which a caching gateway must not answer itself.
     expect(headers.get("cf-aig-skip-cache")).toBe("true");
-    expect(body.model).toBe(KIMI);
+    expect(body.model).toBe(GLM);
     expect(body.max_completion_tokens ?? body.max_tokens).toBe(16);
 
     expect(entries).toEqual([{
       component: "workshop.admin.settings", event: "gateway.provider.test",
-      message: "tested an AI Gateway provider", modelId: KIMI, outcome: "ok",
+      message: "tested an AI Gateway provider", modelId: GLM, outcome: "ok",
       durationMs: expect.any(Number),
     }]);
     // Nothing is stored.
@@ -1057,11 +1057,11 @@ describe("AdminSettings.testGatewayProvider", () => {
     const { test, requests } = tested(refusal(401, "Incorrect API key provided."));
     const { result, entries } = await test("cloudflare");
     expect(result).toStrictEqual(
-        { model: KIMI, ok: false, status: 401, message: "401 Incorrect API key provided." });
+        { model: GLM, ok: false, status: 401, message: "401 Incorrect API key provided." });
 
     expect(entries).toEqual([{
       component: "workshop.admin.settings", event: "gateway.provider.test",
-      message: "tested an AI Gateway provider", modelId: KIMI, outcome: "error", statusCode: 401,
+      message: "tested an AI Gateway provider", modelId: GLM, outcome: "error", statusCode: 401,
       durationMs: expect.any(Number),
     }]);
     const prompt = (requests[0]!.body.messages as { content: string }[]).at(-1)!.content;
@@ -1144,8 +1144,8 @@ describe("AdminSettings.testGatewayProvider", () => {
       const { result, entries } = await test("cloudflare");
       expect(timeout).toHaveBeenCalledWith(15_000);
       expect(requests).toHaveLength(1);
-      expect(result).toStrictEqual({ model: KIMI, ok: false, message: TIMED_OUT });
-      expect(entries).toMatchObject([{ modelId: KIMI, outcome: "error" }]);
+      expect(result).toStrictEqual({ model: GLM, ok: false, message: TIMED_OUT });
+      expect(entries).toMatchObject([{ modelId: GLM, outcome: "error" }]);
       expect(entries[0]!.statusCode).toBeUndefined();
     } finally {
       timeout.mockRestore();
@@ -1155,7 +1155,7 @@ describe("AdminSettings.testGatewayProvider", () => {
   it("tests a provider that is off, and leaves it off", async () => {
     const { test, inDo } = tested(
         () => completion("OK"), { CF_AI_GATEWAY_PROVIDERS: "anthropic" });
-    expect((await test("cloudflare")).result).toStrictEqual({ model: KIMI, ok: true });
+    expect((await test("cloudflare")).result).toStrictEqual({ model: GLM, ok: true });
     const { stored, view } = await providers(inDo);
     expect(stored).toStrictEqual([]);
     expect(view[0]).toStrictEqual({ provider: "cloudflare", needsApiToken: false });
@@ -1180,7 +1180,7 @@ describe("AdminSettings.testGatewayProvider", () => {
     const { test } = tested(refusal(403, said));
     const { result, entries } = await test("cloudflare");
     expect(result).toStrictEqual({
-      model: KIMI, ok: false, status: 403,
+      model: GLM, ok: false, status: 403,
       message: `403 bad key: [redacted] was refused ${"x".repeat(400)}`.slice(0, 300),
     });
     expect(JSON.stringify(entries)).not.toContain("gateway-token");
@@ -1209,7 +1209,7 @@ describe("AdminSettings.testGatewayProvider", () => {
         const view = (await admin.getSettings("admin")).gatewayModels!;
         expect(view.models.find(model => model.id === "claude-fable-5-1")?.mode).toBe("hidden");
         answer.resolve(completion("OK"));
-        expect(await test).toStrictEqual({ model: KIMI, ok: true });
+        expect(await test).toStrictEqual({ model: GLM, ok: true });
       });
     } finally {
       logged.mockRestore();
@@ -1234,7 +1234,7 @@ const asked = ({ body }: { body: Record<string, unknown> }) => {
 };
 
 describe("AdminSettings.testGatewayModel", () => {
-  const GLM = "@cf/zai-org/glm-5.2";
+  const GLM = "@cf/zai-org/glm-5.3";
   const OPUS = "claude-opus-5-5";
   const SONNET_5 = "claude-sonnet-5";
   const EVERY_PROVIDER = { CF_AI_GATEWAY_PROVIDERS: "anthropic,openai,cloudflare" };
@@ -1348,17 +1348,17 @@ describe("AdminSettings.testGatewayModel", () => {
     }));
     expect(await sent("@cf/test/short")).toEqual({ cap: 1000 });
     // Workers AI's own models answer with up to 32,768 tokens.
-    expect(await sent(KIMI)).toEqual({ cap: 2048 });
+    expect(await sent(GLM)).toEqual({ cap: 2048 });
   });
 
   it("tests a model that is hidden or disabled, and leaves it so", async () => {
     const { sent, inDo, stored, put } = answering();
     await inDo(admin => admin.setGatewayModelMode(GLM, "disabled"));
-    await inDo(admin => admin.setGatewayModelMode(KIMI, "hidden"));
+    await inDo(admin => admin.setGatewayModelMode(GLM, "hidden"));
     put.mockClear();
     expect(await sent(GLM)).toEqual({ cap: 2048 });
-    expect(await sent(KIMI)).toEqual({ cap: 2048 });
-    expect((await stored()).modelModes).toEqual({ [GLM]: "disabled", [KIMI]: "hidden" });
+    expect(await sent(GLM)).toEqual({ cap: 2048 });
+    expect((await stored()).modelModes).toEqual({ [GLM]: "disabled", [GLM]: "hidden" });
     expect(put).not.toHaveBeenCalled();
   });
 

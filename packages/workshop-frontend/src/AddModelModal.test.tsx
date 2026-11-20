@@ -106,7 +106,7 @@ describe('AddModelModal', () => {
     await click(document.body.querySelector<HTMLElement>('[role="combobox"]')!)
 
     const options = Array.from(document.body.querySelectorAll('[role="option"]'), option => option.textContent)
-    expect(options).toContain('GLM 5.2 (Workers AI)')
+    expect(options).toContain('GLM 5.3 (Workers AI)')
     expect(options.includes('Clef (Workers AI)')).toBe(!chatModelsOnly)
   })
 

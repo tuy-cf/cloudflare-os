@@ -1044,6 +1044,8 @@ describe("gateway model reasoning levels", () => {
     ["google", "gemini-3.6-flash", null],
     ["cloudflare", "@cf/moonshotai/kimi-k2.7-code", null],
     ["cloudflare", "@cf/zai-org/glm-5.2", null],
+    ["cloudflare", "@cf/zai-org/glm-5.3", null],
+    ["cloudflare", "@cf/deepseek-ai/deepseek-v4.1-flash-1017", null],
     ["cloudflare", "@cf/zai-org/glm-5.3-flash", null],
     ["cloudflare", "@cf/deepseek-ai/deepseek-v4-pro-0813", null],
     ["cloudflare", "@cf/cloudflare/clef", null],
