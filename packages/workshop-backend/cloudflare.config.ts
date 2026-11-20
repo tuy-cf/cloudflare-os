@@ -7,6 +7,11 @@ export default defineGadgetsWorker({
   name: "workshop-backend",
   entrypoint: ".wrangler/validate/src/server.ts",
 
+  // Long agent turns (reasoning-heavy models streaming, tool orchestration, gatekeeper RPCs)
+  // exceeded the default 30s CPU budget in the Overseer DO (agent.run.failed: "Worker exceeded
+  // CPU time limit"). Enterprise permits up to 5 minutes per invocation.
+  limits: { cpuMs: 300000 },
+
   // `global_fetch_strictly_public` makes the global fetch() function strictly fetch from
   // the public internet in production, rather than the legacy behavior in which same-zone
   // requests go directly to origin bypassing Cloudflare. This flag is important to protect
