@@ -457,7 +457,11 @@ export default function GatekeeperModal({
         setAccounts(Array.from(accountMap.values()))
       },
     })
-    const subscription = authenticatedApi.subscribeConnectedAccounts(subscriber)
+    // Include forced ambient accounts for the same reason as CreationAccountModal: an "enabled"
+    // ambient vendor's account is hidden from the unfiltered subscription, but is exactly the
+    // account a resource connection must be configured on.
+    const subscription = authenticatedApi.subscribeConnectedAccounts(
+      subscriber, { includeForcedAutoProvisionedAccounts: true })
     subscription.catch(error => {
       if (cancelled) return
       logRpcFailure('Failed to subscribe to connected accounts:', error)

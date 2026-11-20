@@ -92,7 +92,13 @@ export const CreationAccountModal = ({ overseer, gatekeeperId, onChoose, onCance
       ready() {
         if (!cancelled) setReady(true)
       },
-    }))
+    }), {
+      // Resource configuration needs forced ambient accounts too: an "enabled" ambient vendor's
+      // account is hidden from the unfiltered Connectors subscription, which left the account
+      // invisible here even after it was provisioned. (The Connectors management list keeps
+      // forced accounts hidden; this modal is where they get used.)
+      includeForcedAutoProvisionedAccounts: true,
+    })
     subscription.catch(err => {
       if (cancelled) return
       console.error('Failed to subscribe to connected accounts:', err)
@@ -208,8 +214,13 @@ export const CreationAccountModal = ({ overseer, gatekeeperId, onChoose, onCance
                 grantingAccountId={starting?.kind === 'grant' ? starting.accountId : null}
                 onSelect={setChosen}
                 onConnect={() => void startFlow({ kind: 'connect' }, () =>
-                  authenticatedApi.connectAccount(
-                    target.vendor.id, required.length > 0 ? required : undefined))}
+                  // Ambient (auto-provisioning) vendors mint the account server-side with no
+                  // OAuth pop-up: route them to provisionAmbientAccount (see the shared API
+                  // contract) instead of connectAccount, which throws for these vendors.
+                  target.vendor.description.autoProvisionsAccount
+                    ? authenticatedApi.provisionAmbientAccount(target.vendor.id).then(() => null)
+                    : authenticatedApi.connectAccount(
+                      target.vendor.id, required.length > 0 ? required : undefined))}
                 onReconnect={accountId => void startFlow({ kind: 'reconnect', accountId }, () =>
                   authenticatedApi.reconnectAccount(accountId))}
                 onGrantAccess={accountId => void startFlow({ kind: 'grant', accountId }, () =>

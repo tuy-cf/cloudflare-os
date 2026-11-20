@@ -126,6 +126,7 @@ function accountDescription(id: number, grantedResourceUrlPatterns?: string[]) {
 
 const api = vi.hoisted(() => ({
   subscriber: null as ConnectedAccountsSubscriber | null,
+  subscriptionFilter: null as unknown,
   startResourceConfigurator: vi.fn<(accountId: number, resourceUrlPattern: string) => Promise<object>>(),
   ensureAccountResources: vi.fn<(accountId: number, patterns: string[]) => Promise<ConnectFlowStart | null>>(),
   provisionAmbientAccount: vi.fn<(vendorId: string) => Promise<void>>(),
@@ -151,8 +152,9 @@ function authenticatedApi({ resource = RESOURCE, otherResources = [], accountIds
       description: vendorDescription,
       supportedResources: resources,
     }],
-    subscribeConnectedAccounts: (subscriber: ConnectedAccountsSubscriber) => {
+    subscribeConnectedAccounts: (subscriber: ConnectedAccountsSubscriber, filter?: unknown) => {
       api.subscriber = subscriber
+      api.subscriptionFilter = filter
       for (const id of accountIds) {
         subscriber.add(id, accountDescription(id, granted), VENDOR, resources, true, 'catalog')
       }
@@ -180,6 +182,7 @@ afterEach(() => {
   testState.frameKeys = []
   testState.ensureResources = null
   api.subscriber = null
+  api.subscriptionFilter = null
   api.startResourceConfigurator.mockReset()
   api.ensureAccountResources.mockReset()
   api.provisionAmbientAccount.mockReset()
@@ -608,6 +611,8 @@ describe('GatekeeperModal ambient vendors', () => {
     expect(api.connectAccount).not.toHaveBeenCalled()
     expect(openConnectWindow).not.toHaveBeenCalled()
     expect(testState.toasts).toEqual([{ title: 'Account connected.', variant: 'success' }])
+    // Forced ambient accounts ("enabled" mode) must not be filtered out of the account list.
+    expect(api.subscriptionFilter).toEqual({ includeForcedAutoProvisionedAccounts: true })
   })
 
   it('keeps the OAuth pop-up flow for ordinary vendors', async () => {

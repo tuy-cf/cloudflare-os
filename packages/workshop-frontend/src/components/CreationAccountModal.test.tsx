@@ -21,6 +21,7 @@ const testState = vi.hoisted(() => ({
   collect: null as ((frame: Frame) => Promise<string>) | null,
   toasts: [] as unknown[],
   subscriber: null as ConnectedAccountsSubscriber | null,
+  subscriptionFilter: null as unknown,
   // The mounted configurator's access-request handler, and how many configurators have mounted.
   ensureResources: null as ((patterns: string[]) => Promise<boolean>) | null,
   mounts: 0,
@@ -110,6 +111,9 @@ let starts: Start[] = []
 
 const ensureAccountResources =
   vi.fn<(accountId: number, patterns: string[]) => Promise<ConnectFlowStart | null>>()
+const provisionAmbientAccount = vi.fn<(vendorId: string) => Promise<void>>()
+const connectAccount =
+  vi.fn<(vendorId: string, patterns?: string[]) => Promise<ConnectFlowStart>>()
 
 let root: Root | undefined
 let container: HTMLDivElement | undefined
@@ -124,13 +128,16 @@ afterEach(() => {
   testState.collect = null
   testState.toasts = []
   testState.subscriber = null
+  testState.subscriptionFilter = null
   testState.ensureResources = null
   testState.mounts = 0
   ensureAccountResources.mockReset()
+  provisionAmbientAccount.mockReset()
+  connectAccount.mockReset()
   openConnectWindow.mockReset()
 })
 
-async function renderModal() {
+async function renderModal(options: { ambient?: boolean } = {}) {
   testState.collect = readFrame
   const startCreationConfigurator = vi.fn<(accountId: number) => Promise<object>>(accountId => {
     const frame = deferred<object>()
@@ -140,20 +147,27 @@ async function renderModal() {
   testState.authenticatedApi = {
     listGatekeeperVendors: async () => [{
       id: 'google',
-      description: { displayName: 'Google' },
+      description: options.ambient
+        ? { displayName: 'Google', autoProvisionsAccount: true }
+        : { displayName: 'Google' },
       supportedResources: [{ urlPattern: PATTERN, creatable: true, creationConfigurator: true }],
     }],
-    subscribeConnectedAccounts: (subscriber: ConnectedAccountsSubscriber) => {
+    subscribeConnectedAccounts: (subscriber: ConnectedAccountsSubscriber, filter?: unknown) => {
       testState.subscriber = subscriber
-      subscriber.add(5, { uniqueName: 'work' } as AccountDescription, {} as VendorDescription, [],
-          true, 'google')
-      subscriber.add(6, { uniqueName: 'home' } as AccountDescription, {} as VendorDescription, [],
-          true, 'google')
+      testState.subscriptionFilter = filter
+      if (!options.ambient) {
+        subscriber.add(5, { uniqueName: 'work' } as AccountDescription, {} as VendorDescription, [],
+            true, 'google')
+        subscriber.add(6, { uniqueName: 'home' } as AccountDescription, {} as VendorDescription, [],
+            true, 'google')
+      }
       subscriber.ready()
       return Object.assign(Promise.resolve({}), { [Symbol.dispose]: () => {} })
     },
     startCreationConfigurator,
     ensureAccountResources,
+    provisionAmbientAccount,
+    connectAccount,
   }
   const overseer = {
     getGatekeeperById: async () => ({
@@ -194,6 +208,19 @@ const accountButton = (name: string) => button(b => b.textContent?.startsWith(na
 const reportReady = () => act(() => testState.reportReady!(true))
 
 describe('CreationAccountModal', () => {
+  // An ambient (auto-provisioning) vendor has no OAuth redirect: connecting must mint the
+  // account via provisionAmbientAccount, not connectAccount (which throws for these vendors).
+  it('provisions an ambient vendor in place instead of opening the OAuth pop-up', async () => {
+    await renderModal({ ambient: true })
+    const connect = button(b => b.textContent === 'Connect Google')
+    await act(async () => connect.click())
+    expect(provisionAmbientAccount).toHaveBeenCalledWith('google')
+    expect(connectAccount).not.toHaveBeenCalled()
+    expect(openConnectWindow).not.toHaveBeenCalled()
+    // Forced ambient accounts ("enabled" mode) must not be filtered out of the account list.
+    expect(testState.subscriptionFilter).toEqual({ includeForcedAutoProvisionedAccounts: true })
+  })
+
   it('approves with the configuration from the selected account\'s configurator', async () => {
     const { startCreationConfigurator, onChoose } = await renderModal()
     expect(startCreationConfigurator).toHaveBeenLastCalledWith(5, PATTERN)
